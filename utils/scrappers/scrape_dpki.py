@@ -44,7 +44,7 @@ def scrape_pdki(per_page=100, max_pages=100):
             }}));
         """
         page.evaluate(js_code)
-        print(f"🔄 Memuat halaman.")
+        print(f"🔄 Load Page.")
 
         page.reload(wait_until="networkidle")
         time.sleep(2)
@@ -59,7 +59,7 @@ def scrape_pdki(per_page=100, max_pages=100):
             soup = BeautifulSoup(html, "html.parser")
             divwrap = soup.select_one("div.flex.flex-col.gap-6.w-\\[86vw\\].max-w-\\[86vw\\].md\\:w-full")
             if not divwrap:
-                print(f"⚠️ Tidak ada data di halaman ini, stop scraping. {divwrap}", divwrap)
+                print(f"⚠️ Data is empty, stop scrapping. {divwrap}", divwrap)
                 break
 
             for card in divwrap.select('a'):
@@ -106,22 +106,22 @@ def scrape_pdki(per_page=100, max_pages=100):
                 fifty_btn = page.get_by_role("button", name="500")
 
                 if next_btn.is_visible():
-                    print("➡️ Klik tombol Next")
+                    print("➡️ Click next button to load more results.")
                     next_btn.click()
                     page.wait_for_load_state("networkidle")
 
                 elif fifty_btn.is_visible():
-                    print("➡️ Tidak ada Next, klik tombol 500 lalu selesai.")
+                    print("➡️ Can't see next button, clicking 500 results per page.")
                     fifty_btn.click()
                     page.wait_for_load_state("networkidle")
                     break
 
                 else:
-                    print("⚠️ Tidak ada tombol Next atau 500, berhenti.")
+                    print("⚠️ Not enough results to paginate, stopping.")
                     break
 
             except Exception as e:
-                print(f"⚠️ Error saat navigasi tombol: {e}")
+                print(f"⚠️ Error when navigate: {e}")
                 break
 
 
