@@ -1,9 +1,8 @@
-from ..minio import upload_base64_image_to_minio
+from utils.minio import upload_base64_image_to_minio
 from playwright.sync_api import sync_playwright
-from ..supabase import supabase_client
+from utils.supabase import supabase_client
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
-import time
 
 
 def scrape_pdki(per_page=100, max_pages=100):
@@ -47,30 +46,36 @@ def scrape_pdki(per_page=100, max_pages=100):
         print(f"🔄 Load Page.")
 
         page.reload(wait_until="networkidle")
-        time.sleep(2)
-        all_results = []
-
+        
+        i = 1
         while True:
             results = []
-            page.wait_for_selector("div.flex.flex-col.gap-6.w-\\[86vw\\].max-w-\\[86vw\\].md\\:w-full")
+            page.wait_for_selector("div.flex.flex-col.gap-4")
 
             html = page.content()
-            
             soup = BeautifulSoup(html, "html.parser")
-            divwrap = soup.select_one("div.flex.flex-col.gap-6.w-\\[86vw\\].max-w-\\[86vw\\].md\\:w-full")
+            divwrap = soup.select_one("div.flex.flex-col.gap-4")
             if not divwrap:
                 print(f"⚠️ Data is empty, stop scrapping. {divwrap}", divwrap)
                 break
 
-            for card in divwrap.select('a'):
+            items = divwrap.select("div.flex.flex-col.gap-6")[0]
+            if not items:
+                print("⚠️ No items found inside divwrap.")
+                break
+
+            for card in items.select('a'):
                 link = card.get('href', "Unknown").strip()
                 merk_name = card.select_one("h1.text-md.md\\:text-lg.cursor-pointer").get_text(strip=True)
-                merk_status = card.select_one("div.inline-flex.items-center").get_text(strip=True)
                 merk_logo = card.select_one("img.w-28.h-28.rounded.border.object-contain").get("src", "Unknown").strip()
-                merk_class = card.select_one("p.text-sm").get_text(strip=True)
+                
+                status_n_appwrap = card.select_one("div.flex.flex-col.md\\:flex-row.gap-2.md\\:items-center")
+                merk_status = status_n_appwrap.select_one("div.inline-flex.items-center").get_text(strip=True)
+                merk_application_number = status_n_appwrap.select_one("p.text-gray-400.font-medium.text-sm").get_text(strip=True)
+                
+                merk_class = card.select("p.text-sm")[1].get_text(strip=True)
                 merk_desc = card.select_one("p.text-gray-400.font-medium.text-sm.line-clamp-1").get_text(strip=True)
                 merk_owner = card.select_one("div.flex.gap-1.text-sm").get_text(strip=True)
-                merk_application_number = card.select_one("p.text-gray-400.font-medium.text-sm").get_text(strip=True)
 
                 # Upload base64 logo to MinIO and get URL
                 merk_logo_url = None
@@ -96,7 +101,7 @@ def scrape_pdki(per_page=100, max_pages=100):
 
             # --- insert ke supabase ---
             try:
-                supabase_client().table("pdki").upsert(results, on_conflict="application_number").execute()
+                supabase_client().table("pdki_new").upsert(results, on_conflict="application_number").execute()
             except Exception as e:
                 print(f"Supabase insert error: {e}")
 
@@ -124,9 +129,11 @@ def scrape_pdki(per_page=100, max_pages=100):
                 print(f"⚠️ Error when navigate: {e}")
                 break
 
+            print("Loading page", i, "with", len(results), "results.")
+            i += 1
 
         browser.close()
-        return len(results)
+        return results
 
 if __name__ == "__main__":
     per_page = 20
