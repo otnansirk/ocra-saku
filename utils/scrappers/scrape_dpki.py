@@ -52,7 +52,46 @@ def scrape_pdki(per_page=100, max_pages=100):
                     consultants: {{ terms: {{ field: "consultant.reprs_name_keyword" }} }}
                 }},
                 esQuery: {{}},
-                queryList: [],
+                queryList: [
+                    {{
+                        "key": "keywords",
+                        "queryType": "must",
+                        "query": [
+                            {{
+                                "bool": {{
+                                    "should": [
+                                        {{
+                                            "match": {{
+                                                "id": "eiko"
+                                            }}
+                                        }},
+                                        {{
+                                            "match": {{
+                                                "nomor_permohonan": "eiko"
+                                            }}
+                                        }},
+                                        {{
+                                            "match": {{
+                                                "nomor_pendaftaran": "eiko"
+                                            }}
+                                        }},
+                                        {{
+                                            "match_phrase": {{
+                                                "owner.tm_owner_name": "eiko"
+                                            }}
+                                        }},
+                                        {{
+                                            "match_phrase": {{
+                                                "nama_merek": "eiko*"
+                                            }}
+                                        }}
+                                    ]
+                                }}
+                            }}
+                        ],
+                        "data": "eiko"
+                    }}
+                ],
                 searchTrigger: Date.now(),
                 sort: {{
                     "tanggal_pengumuman": "desc"
@@ -66,7 +105,7 @@ def scrape_pdki(per_page=100, max_pages=100):
 
         page.reload(wait_until="networkidle")
         
-        i = 3
+        i = 1
         while True:
             print("➡️ Load page", i)
             
