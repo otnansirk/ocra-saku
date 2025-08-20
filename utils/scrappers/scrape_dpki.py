@@ -3,7 +3,23 @@ from playwright.sync_api import sync_playwright
 from utils.supabase import supabase_client
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+from datetime import datetime
 
+
+def wait_for_selector(page):
+    try:
+        page.wait_for_selector("div.flex.space-x-4.w-full", state="detached", timeout=300000)
+        page.wait_for_selector("div.flex.flex-col.gap-6 a", timeout=300000)
+    except Exception as e:
+        count_before = len(page.query_selector_all("div.flex.flex-col.gap-6 a"))
+        page.wait_for_function(
+            """oldCount => {
+                const newCount = document.querySelectorAll('div.flex.flex-col.gap-6 a').length;
+                return newCount !== oldCount && newCount > 0;
+            }""",
+            arg=count_before,
+            timeout=300000
+        )
 
 def scrape_pdki(per_page=100, max_pages=100):
     load_dotenv()
@@ -30,26 +46,30 @@ def scrape_pdki(per_page=100, max_pages=100):
                 pageFrom: 0,
                 pageSize: {per_page},
                 aggs: {{
-                country: {{ terms: {{ field: "owner.country_name" }} }},
-                provinces: {{ terms: {{ field: "province.province_keyword" }} }},
-                names: {{ terms: {{ field: "nama_merek_keyword" }} }},
-                consultants: {{ terms: {{ field: "consultant.reprs_name_keyword" }} }}
+                    country: {{ terms: {{ field: "owner.country_name" }} }},
+                    provinces: {{ terms: {{ field: "province.province_keyword" }} }},
+                    names: {{ terms: {{ field: "nama_merek_keyword" }} }},
+                    consultants: {{ terms: {{ field: "consultant.reprs_name_keyword" }} }}
                 }},
                 esQuery: {{}},
                 queryList: [],
-                searchTrigger: Date.now()
+                searchTrigger: Date.now(),
+                sort: {{
+                    "tanggal_pengumuman": "desc"
+                }}
             }},
             version: 0
             }}));
         """
         page.evaluate(js_code)
-        print(f"🔄 Load Page.")
+        print(f"🔄 Fisrt load Page. {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         page.reload(wait_until="networkidle")
         
-        i = 1
+        i = 3
         while True:
-            results = []
+            print("➡️ Load page", i)
+            
             page.wait_for_selector("div.flex.flex-col.gap-4")
 
             html = page.content()
@@ -59,12 +79,12 @@ def scrape_pdki(per_page=100, max_pages=100):
                 print(f"⚠️ Data is empty, stop scrapping. {divwrap}", divwrap)
                 break
 
-            items = divwrap.select("div.flex.flex-col.gap-6")[0]
+            items = divwrap.select("div.flex.flex-col.gap-6")
             if not items:
                 print("⚠️ No items found inside divwrap.")
                 break
 
-            for card in items.select('a'):
+            for card in items[0].select('a'):
                 link = card.get('href', "Unknown").strip()
                 merk_name = card.select_one("h1.text-md.md\\:text-lg.cursor-pointer").get_text(strip=True)
                 merk_logo = card.select_one("img.w-28.h-28.rounded.border.object-contain").get("src", "Unknown").strip()
@@ -97,31 +117,31 @@ def scrape_pdki(per_page=100, max_pages=100):
                     "application_number": merk_application_number,
                     "logo_url": merk_logo_url
                 }
-                results.append(data)
 
-            # --- insert ke supabase ---
-            try:
-                supabase_client().table("pdki_new").upsert(results, on_conflict="application_number").execute()
-            except Exception as e:
-                print(f"Supabase insert error: {e}")
+                # --- insert ke supabase ---
+                try:
+                    supabase_client().table("pdki").upsert(data, on_conflict="application_number").execute()
+                except Exception as e:
+                    print(f"Supabase insert error: {e}")
 
 
             try:
                 next_btn = page.get_by_role("button", name="Next")
-                fifty_btn = page.get_by_role("button", name="500")
+                fifty_btn = page.get_by_role("button", name=str(max_pages))
 
                 if next_btn.is_visible():
                     print("➡️ Click next button to load more results.")
                     next_btn.click()
                     page.wait_for_load_state("networkidle")
-
+                    wait_for_selector(page)
+ 
                 elif fifty_btn.is_visible():
-                    print("➡️ Can't see next button, clicking 500 results per page.")
+                    print(f"➡️ Can't see next button, clicking {max_pages} results per page.")
                     fifty_btn.click()
                     page.wait_for_load_state("networkidle")
-                    break
+                    wait_for_selector(page)
 
-                else:
+                else: 
                     print("⚠️ Not enough results to paginate, stopping.")
                     break
 
@@ -129,12 +149,14 @@ def scrape_pdki(per_page=100, max_pages=100):
                 print(f"⚠️ Error when navigate: {e}")
                 break
 
-            print("Loading page", i, "with", len(results), "results.")
+            print("Loading page", i)
             i += 1
 
         browser.close()
-        return results
+        return f"Last page {i}"
 
 if __name__ == "__main__":
-    per_page = 20
-    print(scrape_pdki(per_page=per_page))
+    per_page = 1000
+    max_pages = 10000/per_page
+    res = scrape_pdki(per_page=per_page, max_pages=int(max_pages))
+    print(res, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
