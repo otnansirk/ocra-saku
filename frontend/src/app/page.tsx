@@ -113,6 +113,9 @@ export default function Home() {
             <p className="mt-2 text-lg text-muted-foreground">
               Enter your brand name and upload your logo to get a comprehensive audit report.
             </p>
+            <p className="mt-2 text-lg text-muted-foreground">
+              This is only for demo, so don’t expect too much from this design hehe.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
