@@ -15,7 +15,7 @@ def upload_base64_image_to_minio(base64_str, object_name=None, folder=None, buck
     )
 
     bucket_name = "public" 
-    default_folder = "eikovisual"  
+    default_folder = "images"  
 
     # Ensure bucket exists
     found = minio_client.bucket_exists(bucket_name)
