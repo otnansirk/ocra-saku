@@ -4,6 +4,8 @@ from utils.supabase import supabase_client
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from datetime import datetime
+from utils.scrappers.filtering_pdki import filtering
+import os
 
 
 def wait_for_selector(page):
@@ -21,8 +23,7 @@ def wait_for_selector(page):
             timeout=300000
         )
 
-def scrape_pdki(per_page=100, max_pages=100):
-    load_dotenv()
+def scrape_pdki(per_page=100, max_pages=100, filtering_data=None, minio_bucket=None, minio_folder=None, database_table=None):
 
     url = "https://pdki-indonesia.dgip.go.id/search"
     
@@ -31,78 +32,8 @@ def scrape_pdki(per_page=100, max_pages=100):
         context = browser.new_context()
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
-        js_code = f"""
-            localStorage.setItem("search-store", JSON.stringify({{
-            state: {{
-                method: "NORMAL",
-                captchaToken: null,
-                keywords: "",
-                category: "trademark",
-                selectedStatus: [],
-                searchIndex: "trademark",
-                mustQuery: [],
-                shouldQuery: [],
-                filterQuery: [],
-                pageFrom: 0,
-                pageSize: {per_page},
-                aggs: {{
-                    country: {{ terms: {{ field: "owner.country_name" }} }},
-                    provinces: {{ terms: {{ field: "province.province_keyword" }} }},
-                    names: {{ terms: {{ field: "nama_merek_keyword" }} }},
-                    consultants: {{ terms: {{ field: "consultant.reprs_name_keyword" }} }}
-                }},
-                esQuery: {{}},
-                queryList: [
-                    {{
-                        "key": "keywords",
-                        "queryType": "must",
-                        "query": [
-                            {{
-                                "bool": {{
-                                    "should": [
-                                        {{
-                                            "match": {{
-                                                "id": "eiko"
-                                            }}
-                                        }},
-                                        {{
-                                            "match": {{
-                                                "nomor_permohonan": "eiko"
-                                            }}
-                                        }},
-                                        {{
-                                            "match": {{
-                                                "nomor_pendaftaran": "eiko"
-                                            }}
-                                        }},
-                                        {{
-                                            "match_phrase": {{
-                                                "owner.tm_owner_name": "eiko"
-                                            }}
-                                        }},
-                                        {{
-                                            "match_phrase": {{
-                                                "nama_merek": "eiko*"
-                                            }}
-                                        }}
-                                    ]
-                                }}
-                            }}
-                        ],
-                        "data": "eiko"
-                    }}
-                ],
-                searchTrigger: Date.now(),
-                sort: {{
-                    "tanggal_pengumuman": "desc"
-                }}
-            }},
-            version: 0
-            }}));
-        """
-        page.evaluate(js_code)
+        page.evaluate(filtering_data)
         print(f"🔄 Fisrt load Page. {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
         page.reload(wait_until="networkidle")
         
         i = 1
@@ -140,7 +71,7 @@ def scrape_pdki(per_page=100, max_pages=100):
                 merk_logo_url = None
                 if merk_logo and merk_logo.startswith("data:image"):
                     try:
-                        merk_logo_url = upload_base64_image_to_minio(merk_logo, object_name=f"{merk_name.replace(' ', '_').lower()}_logo.png")["url"]
+                        merk_logo_url = upload_base64_image_to_minio(merk_logo, object_name=f"{merk_name.replace(' ', '_').lower()}_logo.png", bucket=minio_bucket, folder=minio_folder)["url"]
                     except Exception as e:
                         merk_logo_url = f"upload_error: {e}"
                 else:
@@ -159,7 +90,7 @@ def scrape_pdki(per_page=100, max_pages=100):
 
                 # --- insert ke supabase ---
                 try:
-                    supabase_client().table("pdki").upsert(data, on_conflict="application_number").execute()
+                    supabase_client().table(database_table).upsert(data, on_conflict="application_number").execute()
                 except Exception as e:
                     print(f"Supabase insert error: {e}")
 
@@ -195,7 +126,28 @@ def scrape_pdki(per_page=100, max_pages=100):
         return f"Last page {i}"
 
 if __name__ == "__main__":
+    load_dotenv()
+
     per_page = 1000
     max_pages = 10000/per_page
-    res = scrape_pdki(per_page=per_page, max_pages=int(max_pages))
+    filtering_data = filtering(
+        per_page=per_page,
+        # keywords="add keywords",
+        # tanggal_permohonan="2025",
+        # tanggal_pengumuman="2025-08-01|2025-08-30",
+        # tanggal_pendaftaran="2025-08-01|2025-08-30",
+        # tanggal_dimulai_perlindungan="2025-08-01|2025-08-30",
+        # tanggal_berakhir_perlindungan="2025-08-01|2025-08-30",
+        nama_merek="redbox"
+    )
+
+    res = scrape_pdki(
+        per_page=per_page,
+        max_pages=int(max_pages),
+        filtering_data=filtering_data,
+        minio_bucket=os.getenv("MINIO_PUBLIC_BUCKET"),
+        minio_folder=os.getenv("MINIO_PUBLIC_FOLDER"),
+        database_table=os.getenv("SUPABASE_TABLE")
+    )
+
     print(res, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
